@@ -1,0 +1,161 @@
+# =============================================================================
+# AI Apply — Ahmed Tawfik Aboukhadra's Profile
+# =============================================================================
+
+# --- Your Skills & Experience ---
+skills:
+  - python
+  - pytorch
+  - cuda
+  - c++
+  - bash
+  - deep learning
+  - computer vision
+  - 3d reconstruction
+  - gaussian splatting
+  - neural rendering
+  - diffusion models
+  - transformers
+  - foundation models
+  - self-supervised learning
+  - multi-modal learning
+  - distributed training
+  - gcn
+  - graph neural networks
+  - hand pose estimation
+  - object detection
+  - SLAM
+  - MANO
+  - opencv
+  - tensorrt
+  - docker
+  - slurm
+  - hpc
+  - git
+  - linux
+  - numpy
+  - pandas
+  - agentic workflows
+  - RAG
+  - LLM
+  - VLM
+  - huggingface
+
+# --- Desired Job Titles ---
+titles:
+  - computer vision engineer
+  - research engineer
+  - machine learning engineer
+  - 3d vision researcher
+  - perception engineer
+  - deep learning engineer
+  - AI researcher
+  - research scientist
+  - robotics perception engineer
+  - autonomous driving engineer
+  - applied scientist
+  - ML engineer
+  - VLM engineer
+  - LLM engineer
+  - physical AI engineer
+
+# --- Important Keywords (boost jobs containing these) ---
+keywords:
+  - 3d gaussian splatting
+  - neural radiance fields
+  - NeRF
+  - hand-object interaction
+  - scene reconstruction
+  - differentiable rendering
+  - autonomous driving
+  - self-driving
+  - robotics
+  - augmented reality
+  - real-time
+  - point cloud
+  - depth estimation
+  - stereo vision
+  - multi-view
+  - pose estimation
+  - VLM
+  - vision language model
+  - large language model
+  - LLM
+  - physical AI
+  - embodied AI
+  - robot learning
+  - simulation
+  - digital twin
+  - CVPR
+  - ICCV
+  - NeurIPS
+  - foundation model
+
+# --- Search Configuration ---
+search:
+  queries:
+    - "computer vision engineer"
+    - "3D vision research engineer"
+    - "machine learning engineer computer vision"
+    - "perception engineer"
+    - "deep learning engineer"
+    - "autonomous driving perception"
+    - "robotics ML engineer"
+    - "VLM engineer"
+    - "physical AI engineer"
+    - "applied research scientist vision"
+
+  # Search these locations (one query per location per keyword)
+  locations:
+    - "Germany"
+    - "Netherlands"
+    - "Switzerland"
+    - "United Kingdom"
+    - "Europe"
+    - "UAE"
+    - "Saudi Arabia"
+    - "Qatar"
+
+  remote: true
+  job_type: ""
+  max_age_days: 14
+
+  boards:
+    - remotive
+    - adzuna
+    - linkedin
+    - jsearch
+
+# --- Location Preferences ---
+preferred_locations:
+  - Germany
+  - Munich
+  - Berlin
+  - Stuttgart
+  - Kaiserslautern
+  - Netherlands
+  - Amsterdam
+  - Switzerland
+  - Zurich
+  - United Kingdom
+  - London
+  - France
+  - Paris
+  - UAE
+  - Dubai
+  - Abu Dhabi
+  - Saudi Arabia
+  - Riyadh
+  - Qatar
+  - Doha
+  - Remote
+  - Europe
+
+remote_preferred: true
+
+# --- Scoring Weights (must sum to ~1.0) ---
+weights:
+  skills: 0.40
+  title: 0.30
+  keywords: 0.20
+  location: 0.10

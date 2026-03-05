@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}AI Apply{% endblock %}</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+    <style>
+        :root {
+            --pico-font-size: 15px;
+        }
+        body { min-height: 100vh; }
+        nav { padding: 0.5rem 1rem; }
+        .brand { font-weight: 700; font-size: 1.2rem; color: var(--pico-primary); }
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+        .stat-card { text-align: center; padding: 1.2rem; border-radius: 8px; background: var(--pico-card-background-color); border: 1px solid var(--pico-card-border-color, transparent); }
+        .stat-card .value { font-size: 2rem; font-weight: 700; color: var(--pico-primary); }
+        .stat-card .label { font-size: 0.85rem; opacity: 0.7; margin-top: 0.3rem; }
+        .score-badge { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 4px; font-weight: 600; font-size: 0.85rem; }
+        .score-excellent { background: #22c55e33; color: #22c55e; }
+        .score-good { background: #3b82f633; color: #3b82f6; }
+        .score-fair { background: #f59e0b33; color: #f59e0b; }
+        .score-low { background: #6b728033; color: #6b7280; }
+        .board-badge { display: inline-block; padding: 0.1rem 0.4rem; border-radius: 3px; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; }
+        .board-remotive { background: #7c3aed33; color: #7c3aed; }
+        .board-adzuna { background: #059669; color: #fff; }
+        .board-linkedin { background: #0077b5; color: #fff; }
+        .board-jsearch { background: #ea580c33; color: #ea580c; }
+        .board-indeed { background: #2557a7; color: #fff; }
+        .board-glassdoor { background: #0caa41; color: #fff; }
+        .board-stepstone { background: #ff6600; color: #fff; }
+        .job-row { padding: 0.8rem 0; border-bottom: 1px solid var(--pico-muted-border-color); }
+        .job-row:hover { background: var(--pico-card-background-color); }
+        .job-title { font-weight: 600; }
+        .job-title a { text-decoration: none; }
+        .job-meta { font-size: 0.85rem; opacity: 0.7; margin-top: 0.2rem; }
+        .skills-list { margin-top: 0.3rem; }
+        .skill-tag { display: inline-block; padding: 0.05rem 0.35rem; border-radius: 3px; font-size: 0.75rem; background: var(--pico-primary-focus); margin: 0.1rem; }
+        .filter-bar { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: end; margin-bottom: 1rem; }
+        .filter-bar select, .filter-bar input { margin-bottom: 0; }
+        .pagination { display: flex; gap: 0.5rem; justify-content: center; margin-top: 1rem; }
+        .btn-group { display: flex; gap: 0.3rem; }
+        .btn-sm { padding: 0.2rem 0.5rem; font-size: 0.8rem; }
+        .salary { color: #22c55e; font-weight: 600; }
+        .desc-preview { font-size: 0.85rem; opacity: 0.8; margin-top: 0.3rem; max-height: 3em; overflow: hidden; }
+        .actions { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
+        .applied-badge { background: #22c55e33; color: #22c55e; padding: 0.1rem 0.4rem; border-radius: 3px; font-size: 0.75rem; }
+        #scrape-status { display: none; padding: 0.5rem; background: var(--pico-primary-focus); border-radius: 4px; margin-top: 0.5rem; }
+    </style>
+</head>
+<body>
+    <nav>
+        <ul>
+            <li><span class="brand">AI Apply</span></li>
+        </ul>
+        <ul>
+            <li><a href="/">Dashboard</a></li>
+            <li><a href="/jobs">All Jobs</a></li>
+            <li><a href="/jobs?board=&min_score=0.4">Top Matches</a></li>
+        </ul>
+    </nav>
+    <main class="container">
+        {% block content %}{% endblock %}
+    </main>
+    <script>
+        async function scrapeJobs(boards, keywords, location) {
+            const statusEl = document.getElementById('scrape-status');
+            if (statusEl) {
+                statusEl.style.display = 'block';
+                statusEl.textContent = 'Scraping in progress... This may take a minute.';
+            }
+            const body = {};
+            if (boards) body.boards = boards;
+            if (keywords) body.keywords = keywords;
+            if (location) body.location = location;
+            try {
+                const resp = await fetch('/api/scrape', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(body),
+                });
+                const data = await resp.json();
+                if (statusEl) statusEl.textContent = 'Scraping started! Refresh in a minute to see results.';
+                setTimeout(() => location.reload(), 30000);
+            } catch (e) {
+                if (statusEl) statusEl.textContent = 'Error: ' + e.message;
+            }
+        }
+
+        async function rescoreJobs() {
+            const resp = await fetch('/api/rescore', {method: 'POST'});
+            const data = await resp.json();
+            alert(`Re-scored ${data.rescored} jobs`);
+            location.reload();
+        }
+
+        async function markApplied(url) {
+            await fetch('/api/job/apply', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({url}),
+            });
+            location.reload();
+        }
+
+        async function hideJob(url) {
+            await fetch('/api/job/hide', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({url}),
+            });
+            location.reload();
+        }
+
+        function scoreBadgeClass(score) {
+            if (score >= 0.7) return 'score-excellent';
+            if (score >= 0.4) return 'score-good';
+            if (score >= 0.2) return 'score-fair';
+            return 'score-low';
+        }
+    </script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

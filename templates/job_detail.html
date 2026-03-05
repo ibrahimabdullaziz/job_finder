@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}{{ job.title }} — AI Apply{% endblock %}
+{% block content %}
+<nav aria-label="breadcrumb">
+    <ul>
+        <li><a href="/">Dashboard</a></li>
+        <li><a href="/jobs">Jobs</a></li>
+        <li>{{ job.title[:50] }}</li>
+    </ul>
+</nav>
+
+<article>
+    <header>
+        <div style="display:flex;justify-content:space-between;align-items:start;flex-wrap:wrap;gap:0.5rem">
+            <div>
+                <h2 style="margin-bottom:0.3rem">{{ job.title }}</h2>
+                <p style="margin-bottom:0.5rem">
+                    <strong>{{ job.company }}</strong> &middot; {{ job.location }}
+                    {% if job.date_posted %} &middot; Posted: {{ job.date_posted[:10] }}{% endif %}
+                    {% if job.salary %} &middot; <span class="salary">{{ job.salary }}</span>{% endif %}
+                </p>
+            </div>
+            <div style="text-align:right">
+                <span class="score-badge {% if job.match_score >= 0.7 %}score-excellent{% elif job.match_score >= 0.4 %}score-good{% elif job.match_score >= 0.2 %}score-fair{% else %}score-low{% endif %}" style="font-size:1.2rem">
+                    {{ "%.0f"|format(job.match_score * 100) }}% match
+                </span>
+                <br>
+                <span class="board-badge board-{{ job.board }}" style="margin-top:0.3rem">{{ job.board }}</span>
+                {% if job.applied %}<span class="applied-badge">Applied</span>{% endif %}
+            </div>
+        </div>
+    </header>
+
+    <div style="display:flex;gap:0.5rem;margin-bottom:1rem;flex-wrap:wrap">
+        <a href="{{ job.url }}" target="_blank" role="button">Open Job Page</a>
+        <button class="outline" onclick="markApplied('{{ job.url }}')">Mark Applied</button>
+        <button class="outline secondary" onclick="hideJob('{{ job.url }}')">Hide</button>
+    </div>
+
+    {% if job.match_details %}
+    <details open>
+        <summary>Match Analysis</summary>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(150px, 1fr));gap:0.5rem;margin-top:0.5rem">
+            <div class="stat-card">
+                <div class="value" style="font-size:1.3rem">{{ "%.0f"|format((job.match_details.skills_score or 0) * 100) }}%</div>
+                <div class="label">Skills Match</div>
+            </div>
+            <div class="stat-card">
+                <div class="value" style="font-size:1.3rem">{{ "%.0f"|format((job.match_details.title_score or 0) * 100) }}%</div>
+                <div class="label">Title Match</div>
+            </div>
+            <div class="stat-card">
+                <div class="value" style="font-size:1.3rem">{{ "%.0f"|format((job.match_details.keyword_score or 0) * 100) }}%</div>
+                <div class="label">Keyword Match</div>
+            </div>
+            <div class="stat-card">
+                <div class="value" style="font-size:1.3rem">{{ "%.0f"|format((job.match_details.location_score or 0) * 100) }}%</div>
+                <div class="label">Location Match</div>
+            </div>
+        </div>
+        {% if job.match_details.skills_matched %}
+        <p style="margin-top:0.8rem"><strong>Matched Skills:</strong></p>
+        <div class="skills-list">
+            {% for s in job.match_details.skills_matched %}
+            <span class="skill-tag">{{ s }}</span>
+            {% endfor %}
+        </div>
+        {% endif %}
+    </details>
+    {% endif %}
+
+    {% if job.description %}
+    <details open>
+        <summary>Job Description</summary>
+        <div style="white-space:pre-wrap;margin-top:0.5rem;line-height:1.6">{{ job.description }}</div>
+    </details>
+    {% endif %}
+
+    <footer>
+        <small>
+            Scraped: {{ job.scraped_at[:19] if job.scraped_at else 'N/A' }}
+            {% if job.date_posted %} &middot; Posted: {{ job.date_posted[:10] }}{% endif %}
+            {% if job.job_type %} &middot; Type: {{ job.job_type }}{% endif %}
+        </small>
+    </footer>
+</article>
+{% endblock %}
