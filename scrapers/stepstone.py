@@ -2,6 +2,7 @@
 
 import logging
 import urllib.parse
+from typing import Optional
 
 from models import Job, JobBoard, SearchQuery
 from scrapers.base import BaseScraper
@@ -55,7 +56,7 @@ class StepstoneScraper(BaseScraper):
 
         return jobs[:max_results]
 
-    def _parse_card(self, card) -> Job | None:
+    def _parse_card(self, card) -> Optional[Job]:
         title_el = card.select_one(
             "a[data-at='job-item-title'], "
             "h2 a, "

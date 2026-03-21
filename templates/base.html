@@ -70,6 +70,8 @@
             <li><a href="/">Dashboard</a></li>
             <li><a href="/jobs">All Jobs</a></li>
             <li><a href="/jobs?board=&min_score=0.4">Top Matches</a></li>
+            <li><a href="/applications">Applications</a></li>
+            <li><a href="/pipeline">Pipeline</a></li>
             <li><a href="/settings">Settings</a></li>
         </ul>
     </nav>
@@ -151,6 +153,70 @@
             if (score >= 0.4) return 'score-good';
             if (score >= 0.2) return 'score-fair';
             return 'score-low';
+        }
+
+        async function generateApplication(url) {
+            const btn = event.target;
+            btn.disabled = true;
+            btn.textContent = 'Generating...';
+            try {
+                const resp = await fetch('/api/generate-application', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({url}),
+                });
+                const data = await resp.json();
+                if (data.status === 'ok') {
+                    alert('Application generated! CV and cover letter ready.');
+                    window.location.reload();
+                } else {
+                    alert('Error: ' + (data.error || 'Unknown error'));
+                }
+            } catch(e) {
+                alert('Error: ' + e.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Generate Application';
+            }
+        }
+
+        async function addManualJob() {
+            const url = document.getElementById('manual-url').value.trim();
+            const title = document.getElementById('manual-title').value.trim();
+            const company = document.getElementById('manual-company').value.trim();
+            const location = document.getElementById('manual-location').value.trim();
+            if (!url) { alert('URL is required'); return; }
+            try {
+                const resp = await fetch('/api/add-job', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({url, title, company, location}),
+                });
+                const data = await resp.json();
+                if (data.status === 'ok') {
+                    alert('Job added!');
+                    window.location.reload();
+                } else {
+                    alert('Error: ' + (data.error || data.message));
+                }
+            } catch(e) { alert('Error: ' + e.message); }
+        }
+
+        async function runPipeline(dryRun) {
+            const btn = event.target;
+            btn.disabled = true;
+            btn.textContent = dryRun ? 'Previewing...' : 'Running...';
+            try {
+                const resp = await fetch('/api/run-pipeline', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({dry_run: dryRun}),
+                });
+                const data = await resp.json();
+                alert(data.message || 'Pipeline started');
+                if (!dryRun) setTimeout(() => window.location.reload(), 5000);
+            } catch(e) { alert('Error: ' + e.message); }
+            finally { btn.disabled = false; btn.textContent = dryRun ? 'Dry Run' : 'Run Pipeline'; }
         }
     </script>
     {% block scripts %}{% endblock %}

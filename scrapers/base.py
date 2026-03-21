@@ -4,6 +4,7 @@ import logging
 import time
 import random
 from abc import ABC, abstractmethod
+from typing import Optional
 
 import requests
 from bs4 import BeautifulSoup
@@ -30,7 +31,7 @@ class BaseScraper(ABC):
         self.session.headers.update(HEADERS)
         self.delay_range = delay_range
 
-    def _get(self, url: str, params: dict | None = None) -> BeautifulSoup | None:
+    def _get(self, url: str, params: Optional[dict] = None) -> Optional[BeautifulSoup]:
         """Fetch a URL and return parsed HTML."""
         try:
             time.sleep(random.uniform(*self.delay_range))

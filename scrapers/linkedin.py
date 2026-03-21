@@ -2,6 +2,7 @@
 
 import logging
 import urllib.parse
+from typing import Optional
 
 from models import Job, JobBoard, SearchQuery
 from scrapers.base import BaseScraper
@@ -66,7 +67,7 @@ class LinkedInScraper(BaseScraper):
 
         return jobs[:max_results]
 
-    def _parse_card(self, card) -> Job | None:
+    def _parse_card(self, card) -> Optional[Job]:
         title_el = card.select_one("h3.base-search-card__title, h3.job-search-card__title")
         if not title_el:
             return None

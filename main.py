@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AI Apply — Job scraping and matching pipeline.
+AI Apply — Automated job application pipeline.
 
 Usage:
     python main.py scrape                    # Scrape all boards with default config
@@ -9,6 +9,11 @@ Usage:
     python main.py top --limit 20            # Show top matches
     python main.py export -o jobs.json       # Export to JSON
     python main.py ui                        # Launch web UI
+    python main.py pipeline                  # Run full automation cycle once
+    python main.py pipeline --dry-run        # Preview what would happen
+    python main.py daemon                    # Start background automation (every 2 days)
+    python main.py customize --url <URL>     # Generate custom CV for a specific job
+    python main.py answers --url <URL>       # Show pre-generated form answers
 """
 
 import argparse
@@ -17,6 +22,7 @@ import logging
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+from typing import List
 
 import yaml
 from dotenv import load_dotenv
@@ -52,7 +58,7 @@ def load_profile() -> dict:
         return yaml.safe_load(f)
 
 
-def build_queries(profile: dict) -> list[SearchQuery]:
+def build_queries(profile: dict) -> List[SearchQuery]:
     """Build search queries from profile config."""
     search = profile.get("search", {})
     board_names = search.get("boards", ["remotive", "adzuna", "linkedin", "jsearch"])
@@ -101,7 +107,7 @@ def cmd_scrape(args):
             q.boards = override_boards
 
     matcher = JobMatcher(profile)
-    all_jobs: list[Job] = []
+    all_jobs: List[Job] = []
 
     # Track (board, keyword) combos already submitted so location-agnostic
     # boards don't get called repeatedly for every location.
@@ -224,7 +230,7 @@ def cmd_ui(args):
     app.run(host="0.0.0.0", port=args.port, debug=args.debug)
 
 
-def _print_jobs(jobs: list[Job]):
+def _print_jobs(jobs: List[Job]):
     """Pretty-print job list to console."""
     if not jobs:
         print("No jobs found.")
@@ -241,8 +247,120 @@ def _print_jobs(jobs: list[Job]):
     print()
 
 
+def cmd_pipeline(args):
+    """Run the full automation pipeline once."""
+    from pipeline import run_pipeline
+    profile = load_profile()
+    stats = run_pipeline(
+        profile=profile,
+        dry_run=args.dry_run,
+        max_applications=args.max,
+        threshold=args.threshold,
+    )
+    print(f"\nPipeline complete: {stats}")
+
+
+def cmd_daemon(args):
+    """Start the background automation daemon."""
+    from pipeline import run_daemon
+    run_daemon(interval_hours=args.interval)
+
+
+def cmd_customize(args):
+    """Generate a customized CV for a specific job."""
+    from cv_customizer import customize_cv_for_job
+    from cover_letter import create_cover_letter
+    from form_answers import generate_form_answers
+    from cv_customizer import analyze_job, LIFE_STORY_PATH
+
+    conn = get_db()
+    row = conn.execute("SELECT * FROM jobs WHERE url = ?", (args.url,)).fetchone()
+    conn.close()
+
+    if not row:
+        print(f"Job not found in DB: {args.url}")
+        sys.exit(1)
+
+    job = dict(row)
+    profile = load_profile()
+    model = profile.get("pipeline", {}).get("ollama_model", "qwen3.5:9b")
+
+    print(f"Customizing CV for: {job['title']} at {job['company']}")
+
+    result = customize_cv_for_job(
+        job_url=job["url"],
+        title=job["title"],
+        company=job["company"],
+        location=job.get("location", ""),
+        description=job.get("description", ""),
+        model=model,
+    )
+
+    if result:
+        print(f"CV generated: {result['cv_pdf_path']}")
+
+        # Also generate cover letter and form answers
+        life_story = LIFE_STORY_PATH.read_text(encoding="utf-8") if LIFE_STORY_PATH.exists() else ""
+        job_analysis = analyze_job(job.get("description", ""), job["title"], job["company"], model=model)
+
+        cl_path = create_cover_letter(
+            app_dir=result["app_dir"],
+            title=job["title"],
+            company=job["company"],
+            location=job.get("location", ""),
+            description=job.get("description", ""),
+            life_story=life_story,
+            job_analysis=job_analysis,
+            model=model,
+        )
+        if cl_path:
+            print(f"Cover letter generated: {cl_path}")
+
+        answers = generate_form_answers(
+            life_story=life_story,
+            title=job["title"],
+            company=job["company"],
+            description=job.get("description", ""),
+            job_analysis=job_analysis,
+            model=model,
+        )
+        if answers:
+            print(f"\nForm Answers ({len(answers)} questions):")
+            for q, a in answers.items():
+                print(f"  Q: {q}")
+                print(f"  A: {a}\n")
+
+        # Create application record
+        from storage import create_application, update_application
+        app_id = create_application(job["url"], result["slug"])
+        update_application(
+            app_id,
+            status="ready",
+            cv_pdf_path=result["cv_pdf_path"],
+            cover_letter_pdf_path=cl_path or "",
+            form_answers_json=json.dumps(answers),
+        )
+        print(f"\nApplication saved (ID: {app_id})")
+    else:
+        print("Failed to generate CV")
+        sys.exit(1)
+
+
+def cmd_answers(args):
+    """Show pre-generated form answers for a job."""
+    from form_filler import get_fill_instructions, format_fill_guide
+
+    instructions = get_fill_instructions(args.url)
+    if not instructions:
+        print(f"No application found for: {args.url}")
+        print("Run 'customize --url <URL>' first.")
+        sys.exit(1)
+
+    print(format_fill_guide(instructions))
+
+
 def main():
-    parser = argparse.ArgumentParser(description="AI Apply — Job scraping & matching pipeline")
+    parser = argparse.ArgumentParser(description="AI Apply — Automated job application pipeline")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     # scrape
@@ -275,6 +393,28 @@ def main():
     p_ui.add_argument("--port", type=int, default=5000)
     p_ui.add_argument("--debug", action="store_true")
     p_ui.set_defaults(func=cmd_ui)
+
+    # pipeline
+    p_pipeline = subparsers.add_parser("pipeline", help="Run full automation cycle")
+    p_pipeline.add_argument("--dry-run", action="store_true", help="Preview without executing")
+    p_pipeline.add_argument("--max", type=int, default=10, help="Max applications per run")
+    p_pipeline.add_argument("--threshold", type=float, default=0.5, help="Min score to process")
+    p_pipeline.set_defaults(func=cmd_pipeline)
+
+    # daemon
+    p_daemon = subparsers.add_parser("daemon", help="Start background automation loop")
+    p_daemon.add_argument("--interval", type=float, default=48.0, help="Hours between cycles")
+    p_daemon.set_defaults(func=cmd_daemon)
+
+    # customize
+    p_custom = subparsers.add_parser("customize", help="Generate custom CV for a job")
+    p_custom.add_argument("--url", required=True, help="Job URL from database")
+    p_custom.set_defaults(func=cmd_customize)
+
+    # answers
+    p_answers = subparsers.add_parser("answers", help="Show form answers for a job")
+    p_answers.add_argument("--url", required=True, help="Job URL")
+    p_answers.set_defaults(func=cmd_answers)
 
     args = parser.parse_args()
     args.func(args)

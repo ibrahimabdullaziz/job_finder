@@ -163,3 +163,13 @@ weights:
   semantic: 0.30      # LLM embedding similarity (replaces old keyword matching)
   location: 0.10
   experience: 0.05    # life-story TF-IDF (lightweight supplement)
+
+# --- Pipeline Automation ---
+pipeline:
+  auto_apply_threshold: 0.5    # Minimum match score to auto-generate CV/letter
+  max_applications_per_run: 10  # Max applications per pipeline cycle
+  email_recipient: "ahmed.tawfik96@gmail.com"
+  email_digest_interval_days: 2  # Send digest every N days
+  cv_dir: "~/CV"
+  ollama_model: "qwen3.5:9b"   # Local LLM for text generation
+  # gmail_app_password loaded from GMAIL_APP_PASSWORD in .env

@@ -17,6 +17,8 @@ from matcher import JobMatcher
 from storage import (
     get_db, save_jobs, update_scores, get_top_jobs,
     mark_applied, mark_hidden, DB_PATH,
+    get_applications, get_application_by_job,
+    get_pipeline_runs,
 )
 
 logger = logging.getLogger(__name__)
@@ -147,7 +149,14 @@ def create_app():
             return "Job not found", 404
         job = dict(row)
         job["match_details"] = json.loads(job.get("match_details", "{}"))
-        return render_template("job_detail.html", job=job)
+        application = get_application_by_job(url)
+        form_answers = {}
+        if application:
+            try:
+                form_answers = json.loads(application.get("form_answers_json", "{}"))
+            except (json.JSONDecodeError, TypeError):
+                pass
+        return render_template("job_detail.html", job=job, application=application, form_answers=form_answers)
 
     @app.route("/settings")
     def settings():
@@ -308,5 +317,174 @@ def create_app():
             "by_board": {r["board"]: r["cnt"] for r in by_board},
             "by_score": {r["tier"]: r["cnt"] for r in by_score},
         })
+
+    # --- New routes for automation pipeline ---
+
+    @app.route("/applications")
+    def applications_page():
+        apps = get_applications(limit=100)
+        return render_template("applications.html", applications=apps)
+
+    @app.route("/pipeline")
+    def pipeline_page():
+        runs = get_pipeline_runs(limit=20)
+        apps = get_applications()
+        total_applications = len(apps)
+        total_emails = sum(r.get("emails_sent", 0) for r in runs)
+        # Email enabled flag stored in a simple file
+        email_flag = Path(__file__).parent / ".email_enabled"
+        email_enabled = email_flag.exists()
+        return render_template("pipeline.html",
+            runs=runs, total_applications=total_applications,
+            total_emails=total_emails, email_enabled=email_enabled)
+
+    @app.route("/download")
+    def download_file():
+        """Serve a generated PDF file."""
+        from flask import send_file
+        filepath = request.args.get("path", "")
+        if not filepath or not Path(filepath).exists():
+            return "File not found", 404
+        return send_file(filepath, as_attachment=True)
+
+    @app.route("/api/generate-application", methods=["POST"])
+    def api_generate_application():
+        """Generate customized CV + cover letter for a job (runs in background thread)."""
+        data = request.json or {}
+        url = data.get("url", "")
+        if not url:
+            return jsonify({"status": "error", "error": "URL required"})
+
+        conn = get_db()
+        row = conn.execute("SELECT * FROM jobs WHERE url = ?", (url,)).fetchone()
+        conn.close()
+        if not row:
+            return jsonify({"status": "error", "error": "Job not found"})
+
+        job = dict(row)
+
+        def generate():
+            try:
+                from cv_customizer import customize_cv_for_job, analyze_job, LIFE_STORY_PATH
+                from cover_letter import create_cover_letter
+                from form_answers import generate_form_answers as gen_answers
+                from storage import create_application, update_application
+
+                profile = load_profile()
+                model = profile.get("pipeline", {}).get("ollama_model", "qwen3.5:9b")
+
+                result = customize_cv_for_job(
+                    job_url=job["url"], title=job["title"],
+                    company=job["company"], location=job.get("location", ""),
+                    description=job.get("description", ""), model=model,
+                )
+                if not result:
+                    return
+
+                app_id = create_application(job["url"], result["slug"])
+                update_application(app_id, status="cv_generated", cv_pdf_path=result["cv_pdf_path"])
+
+                life_story = LIFE_STORY_PATH.read_text(encoding="utf-8") if LIFE_STORY_PATH.exists() else ""
+                job_analysis = analyze_job(job.get("description", ""), job["title"], job["company"], model=model)
+
+                cl_path = create_cover_letter(
+                    app_dir=result["app_dir"], title=job["title"],
+                    company=job["company"], location=job.get("location", ""),
+                    description=job.get("description", ""),
+                    life_story=life_story, job_analysis=job_analysis, model=model,
+                )
+                if cl_path:
+                    update_application(app_id, status="letter_generated", cover_letter_pdf_path=cl_path)
+
+                answers = gen_answers(
+                    life_story=life_story, title=job["title"],
+                    company=job["company"], description=job.get("description", ""),
+                    job_analysis=job_analysis, model=model,
+                )
+                if answers:
+                    update_application(app_id, status="ready", form_answers_json=json.dumps(answers))
+
+                logger.info("Application generated for %s at %s", job["title"], job["company"])
+            except Exception as e:
+                logger.error("Application generation failed: %s", e)
+
+        thread = threading.Thread(target=generate)
+        thread.start()
+        return jsonify({"status": "ok", "message": "Generating application in background..."})
+
+    @app.route("/api/add-job", methods=["POST"])
+    def api_add_job():
+        """Manually add a job from any source (Indeed MCP, LinkedIn, etc.)."""
+        data = request.json or {}
+        url = data.get("url", "")
+        if not url:
+            return jsonify({"status": "error", "error": "URL required"})
+
+        title = data.get("title", "Unknown Position")
+        company = data.get("company", "Unknown Company")
+        location = data.get("location", "")
+        description = data.get("description", "")
+
+        job = Job(
+            title=title, company=company, location=location,
+            url=url, board=JobBoard.INDEED,  # Default board for manual entries
+            description=description,
+        )
+
+        # Score the job
+        profile = load_profile()
+        matcher = JobMatcher(profile)
+        ranked = matcher.rank([job])
+        n_saved = save_jobs(ranked)
+
+        score = ranked[0].match_score if ranked else 0
+        return jsonify({
+            "status": "ok",
+            "saved": n_saved,
+            "match_score": score,
+            "message": f"Job added with {score:.0%} match score",
+        })
+
+    @app.route("/api/run-pipeline", methods=["POST"])
+    def api_run_pipeline():
+        """Trigger a full pipeline run in background."""
+        data = request.json or {}
+        dry_run = data.get("dry_run", False)
+
+        def run():
+            try:
+                from pipeline import run_pipeline
+                profile = load_profile()
+                run_pipeline(profile=profile, dry_run=dry_run)
+            except Exception as e:
+                logger.error("Pipeline failed: %s", e)
+
+        thread = threading.Thread(target=run)
+        thread.start()
+        return jsonify({"status": "ok", "message": "Pipeline started in background"})
+
+    @app.route("/api/toggle-emails", methods=["POST"])
+    def api_toggle_emails():
+        """Toggle email notifications on/off."""
+        flag_file = Path(__file__).parent / ".email_enabled"
+        if flag_file.exists():
+            flag_file.unlink()
+            enabled = False
+        else:
+            flag_file.touch()
+            enabled = True
+        return jsonify({"status": "ok", "enabled": enabled})
+
+    @app.route("/api/form-answers/<path:url>")
+    def api_form_answers(url):
+        """Get pre-generated form answers for a job."""
+        app_record = get_application_by_job(url)
+        if not app_record:
+            return jsonify({"status": "error", "error": "No application found"})
+        try:
+            answers = json.loads(app_record.get("form_answers_json", "{}"))
+        except json.JSONDecodeError:
+            answers = {}
+        return jsonify({"status": "ok", "answers": answers})
 
     return app

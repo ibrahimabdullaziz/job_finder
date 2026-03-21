@@ -4,6 +4,7 @@ Uses the public jobs-guest endpoint. May break if LinkedIn changes their API."""
 import logging
 import time
 import random
+from typing import Optional
 
 import requests
 from bs4 import BeautifulSoup
@@ -112,7 +113,7 @@ class LinkedInGuestScraper:
         logger.info(f"  LinkedIn (guest): {len(jobs)} jobs found")
         return jobs[:max_results]
 
-    def _parse_card(self, card) -> Job | None:
+    def _parse_card(self, card) -> Optional[Job]:
         title_el = card.select_one("h3.base-search-card__title")
         if not title_el:
             return None

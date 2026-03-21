@@ -2,6 +2,7 @@
 
 import logging
 import urllib.parse
+from typing import Optional
 
 from models import Job, JobBoard, SearchQuery
 from scrapers.base import BaseScraper
@@ -57,7 +58,7 @@ class IndeedScraper(BaseScraper):
 
         return jobs[:max_results]
 
-    def _parse_card(self, card) -> Job | None:
+    def _parse_card(self, card) -> Optional[Job]:
         # Title
         title_el = card.select_one("h2.jobTitle a, h2.jobTitle span, a.jcs-JobTitle")
         if not title_el:

@@ -35,7 +35,37 @@
         <a href="{{ job.url }}" target="_blank" role="button">Open Job Page</a>
         <button class="outline" onclick="markApplied('{{ job.url }}')">Mark Applied</button>
         <button class="outline secondary" onclick="hideJob('{{ job.url }}')">Hide</button>
+        {% if application %}
+            <a href="/applications" role="button" class="outline" style="background:#dcfce7;border-color:#16a34a;color:#16a34a">Application Ready</a>
+        {% else %}
+            <button onclick="generateApplication('{{ job.url }}')" style="background:#88AC0B;border-color:#88AC0B">Generate Application</button>
+        {% endif %}
     </div>
+
+    {% if application %}
+    <details open>
+        <summary>Generated Application ({{ application.status }})</summary>
+        <div style="margin-top:0.5rem">
+            {% if application.cv_pdf_path %}
+            <p><strong>CV PDF:</strong> <a href="/download?path={{ application.cv_pdf_path }}" target="_blank">Download CV</a></p>
+            {% endif %}
+            {% if application.cover_letter_pdf_path %}
+            <p><strong>Cover Letter:</strong> <a href="/download?path={{ application.cover_letter_pdf_path }}" target="_blank">Download Cover Letter</a></p>
+            {% endif %}
+            {% if form_answers %}
+            <details>
+                <summary>Pre-generated Form Answers ({{ form_answers|length }})</summary>
+                {% for q, a in form_answers.items() %}
+                <div style="margin:0.8rem 0;padding:0.5rem;background:#f9fafb;border-radius:4px">
+                    <strong style="color:#1a1a2e">Q: {{ q }}</strong>
+                    <p style="margin:0.3rem 0 0 0;color:#4b5563">{{ a }}</p>
+                </div>
+                {% endfor %}
+            </details>
+            {% endif %}
+        </div>
+    </details>
+    {% endif %}
 
     {% if job.match_details %}
     <details open>

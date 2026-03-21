@@ -3,6 +3,7 @@
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
+from typing import Dict, List
 
 
 class JobBoard(Enum):
@@ -31,7 +32,7 @@ class Job:
     job_type: str = ""  # full-time, part-time, contract
     scraped_at: str = field(default_factory=lambda: datetime.now().isoformat())
     match_score: float = 0.0
-    match_details: dict = field(default_factory=dict)
+    match_details: Dict = field(default_factory=dict)
 
     @property
     def id(self) -> str:
@@ -62,4 +63,4 @@ class SearchQuery:
     remote: bool = False
     job_type: str = ""  # full-time, part-time, contract
     max_age_days: int = 30
-    boards: list[JobBoard] = field(default_factory=lambda: list(JobBoard))
+    boards: List[JobBoard] = field(default_factory=lambda: list(JobBoard))
