@@ -571,6 +571,98 @@ def create_app():
         thread.start()
         return jsonify({"status": "ok", "message": "Pipeline started in background"})
 
+    # --- Profile management APIs ---
+
+    def _save_profile(profile: dict):
+        with open(CONFIG_PATH, "w") as f:
+            yaml.dump(profile, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+
+    @app.route("/api/profile/queries", methods=["GET"])
+    def api_get_queries():
+        profile = load_profile()
+        return jsonify({"queries": profile.get("search", {}).get("queries", [])})
+
+    @app.route("/api/profile/queries", methods=["POST"])
+    def api_add_query():
+        data = request.json or {}
+        query = data.get("query", "").strip()
+        if not query:
+            return jsonify({"status": "error", "error": "Query required"})
+        profile = load_profile()
+        queries = profile.setdefault("search", {}).setdefault("queries", [])
+        if query not in queries:
+            queries.append(query)
+            _save_profile(profile)
+        return jsonify({"status": "ok", "queries": queries})
+
+    @app.route("/api/profile/queries", methods=["DELETE"])
+    def api_delete_query():
+        data = request.json or {}
+        query = data.get("query", "")
+        profile = load_profile()
+        queries = profile.get("search", {}).get("queries", [])
+        queries = [q for q in queries if q != query]
+        profile["search"]["queries"] = queries
+        _save_profile(profile)
+        return jsonify({"status": "ok", "queries": queries})
+
+    @app.route("/api/profile/skills", methods=["GET"])
+    def api_get_skills():
+        profile = load_profile()
+        return jsonify({"skills": profile.get("skills", [])})
+
+    @app.route("/api/profile/skills", methods=["POST"])
+    def api_add_skill():
+        data = request.json or {}
+        skill = data.get("skill", "").strip()
+        if not skill:
+            return jsonify({"status": "error", "error": "Skill required"})
+        profile = load_profile()
+        skills = profile.setdefault("skills", [])
+        if skill not in skills:
+            skills.append(skill)
+            _save_profile(profile)
+        return jsonify({"status": "ok", "skills": skills})
+
+    @app.route("/api/profile/skills", methods=["DELETE"])
+    def api_delete_skill():
+        data = request.json or {}
+        skill = data.get("skill", "")
+        profile = load_profile()
+        skills = [s for s in profile.get("skills", []) if s != skill]
+        profile["skills"] = skills
+        _save_profile(profile)
+        return jsonify({"status": "ok", "skills": skills})
+
+    @app.route("/api/life-story", methods=["GET"])
+    def api_get_life_story():
+        from cv_customizer import resolve_life_story_path, _DEFAULT_CV_DIR
+        life_story_path = resolve_life_story_path(_DEFAULT_CV_DIR)
+        text = life_story_path.read_text(encoding="utf-8") if life_story_path.exists() else ""
+        return jsonify({"text": text, "path": str(life_story_path)})
+
+    @app.route("/api/life-story", methods=["POST"])
+    def api_save_life_story():
+        from cv_customizer import resolve_life_story_path, _DEFAULT_CV_DIR
+        data = request.json or {}
+        text = data.get("text", "")
+        life_story_path = resolve_life_story_path(_DEFAULT_CV_DIR)
+        life_story_path.parent.mkdir(parents=True, exist_ok=True)
+        life_story_path.write_text(text, encoding="utf-8")
+        return jsonify({"status": "ok", "path": str(life_story_path)})
+
+    @app.route("/api/reset-search", methods=["POST"])
+    def api_reset_search():
+        """Archive the current DB and start fresh."""
+        from datetime import datetime as _dt
+        if DB_PATH.exists():
+            archive = DB_PATH.with_name(f"jobs_archive_{_dt.now().strftime('%Y%m%d_%H%M%S')}.db")
+            DB_PATH.rename(archive)
+        # get_db creates tables on first connect
+        conn = get_db()
+        conn.close()
+        return jsonify({"status": "ok", "message": "Search reset. Old data archived."})
+
     @app.route("/api/toggle-emails", methods=["POST"])
     def api_toggle_emails():
         """Toggle email notifications on/off."""
