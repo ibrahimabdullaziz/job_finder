@@ -387,7 +387,12 @@ class JobMatcher:
                 del job._cached_embedding
 
         # Sort by score first, then by date (newer first) as tiebreaker
-        ranked = sorted(ai_jobs, key=lambda j: (j.match_score, j.date_posted if j.date_posted and j.date_posted.lower() not in ("nan", "none", "nat") else "0000"), reverse=True)
+        def _date_key(j):
+            d = j.date_posted
+            if not d or not isinstance(d, str):
+                return "0000"
+            return d if d.lower() not in ("nan", "none", "nat") else "0000"
+        ranked = sorted(ai_jobs, key=lambda j: (j.match_score, _date_key(j)), reverse=True)
         if min_score > 0:
             ranked = [j for j in ranked if j.match_score >= min_score]
 
