@@ -143,6 +143,8 @@ def ensure_cv_scaffold(cv_dir: Path) -> None:
         "skills-template.tex": "skills.tex",
         "projects-template.tex": "projects.tex",
         "education-template.tex": "education.tex",
+        "publications-template.tex": "publications.tex",
+        "own-bib.bib": "own-bib.bib",
         "settings.sty": "settings.sty",
     }
 
@@ -151,6 +153,15 @@ def ensure_cv_scaffold(cv_dir: Path) -> None:
         dest = cv_dir / dest_name
         if src.exists() and not dest.exists():
             shutil.copy2(str(src), str(dest))
+
+    # Ensure optional referenced files exist so compilation doesn't fail.
+    for optional in ["publications.tex", "own-bib.bib"]:
+        dest = cv_dir / optional
+        if not dest.exists():
+            try:
+                dest.write_text("", encoding="utf-8")
+            except Exception:
+                pass
 
     # Life story template (only if user doesn't already have one in project root)
     project_life = _PROJECT_ROOT / "life-story.md"
