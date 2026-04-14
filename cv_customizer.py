@@ -141,7 +141,14 @@ def _looks_like_placeholder(tex: str) -> bool:
         "YOUR_GITHUB/PROJECT",
         "Your domain-specific technical skills here",
     ]
-    return any(m in (tex or "") for m in markers)
+    t = tex or ""
+    if any(m in t for m in markers):
+        return True
+    # Also treat known-bad curve entry formatting as "needs regen"
+    # (LLM sometimes emits \entry*[DATE]{...} which breaks curve template expectations).
+    if re.search(r"\\entry\\*\\[[^\\]]*\\]\\s*\\{", t):
+        return True
+    return False
 
 
 def _generate_base_rubric(*, rubric_name: str, life_story: str, model: str) -> str:
