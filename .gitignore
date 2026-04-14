@@ -3,7 +3,9 @@
 */*.pyc
 *.pyc
 .env
+*.pdf
 .claude/
+venv/
 
 # User-specific content — fill these in locally, don't commit
 profile.yaml
