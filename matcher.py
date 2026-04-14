@@ -126,6 +126,7 @@ class JobMatcher:
         self._specialty_keywords = [kw.lower() for kw in profile.get("keywords", [])]
         self._negative_keywords = [kw.lower() for kw in profile.get("negative_keywords", [])]
         self._strict_specialty = bool(profile.get("strict_specialty_filter", False))
+        self._preferred_regions = [r.lower() for r in profile.get("preferred_regions", [])]
 
         # Load life-story for experience matching
         life_story_text = load_life_story()
@@ -219,15 +220,7 @@ class JobMatcher:
         semantic_score = self._semantic_score(job)
 
         # 4. Location match
-        location_score = 0.0
-        if self._locations:
-            job_loc = job.location.lower()
-            for pref_loc in self._locations:
-                if pref_loc in job_loc or job_loc in pref_loc:
-                    location_score = 1.0
-                    break
-            if self.profile.get("remote_preferred") and "remote" in job_loc:
-                location_score = 1.0
+        location_score = self._location_score(job)
 
         # 5. Experience match — life-story TF-IDF (lightweight supplement)
         experience_score = 0.0
@@ -270,6 +263,28 @@ class JobMatcher:
         }
 
         return round(total, 3), details
+
+    def _location_score(self, job: Job) -> float:
+        """Score location with strong boost for Remote + preferred regions/countries."""
+        text = f"{job.location} {job.title} {job.description[:500]}".lower()
+
+        # Remote preference
+        if self.profile.get("remote_preferred") and any(k in text for k in ["remote", "work from home", "wfh"]):
+            return 1.0
+
+        # Preferred explicit locations
+        if self._locations:
+            for pref in self._locations:
+                if pref and pref in text:
+                    return 1.0
+
+        # Preferred regions (e.g. Middle East / MENA)
+        if self._preferred_regions:
+            for region in self._preferred_regions:
+                if region and region in text:
+                    return 0.9
+
+        return 0.0
 
     def _recency_score(self, job: Job) -> float:
         """Score from 0-1 based on how recently the job was posted. 1.0 = today."""
@@ -318,8 +333,20 @@ class JobMatcher:
     def _seniority_score(self, job: Job) -> float:
         level = self._extract_job_seniority_level(job)
         if level is None:
-            return 0.5
+            # Unknown seniority: neutral-ish
+            return 0.45
 
+        # If user wants internships/entry-level, be more strict against senior roles.
+        if self._preferred_seniority <= SENIORITY_LEVELS["junior"]:
+            if level == SENIORITY_LEVELS["intern"]:
+                return 1.0
+            if level == SENIORITY_LEVELS["junior"]:
+                return 0.75
+            if level == SENIORITY_LEVELS["mid"]:
+                return 0.25
+            return 0.0
+
+        # General case
         delta = level - self._preferred_seniority
         if delta <= -1:
             return 0.9
