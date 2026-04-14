@@ -123,7 +123,76 @@ def personalize_cv_header(app_dir: Path) -> None:
     content = cv_tex.read_text(encoding="utf-8", errors="replace")
     for k, v in replacements.items():
         content = content.replace(k, v)
+
+    # If the user didn't provide a photo in this application folder, hide the photo block.
+    has_photo = (app_dir / "photo.png").exists() or (app_dir / "photo.jpg").exists()
+    if not has_photo:
+        content = content.replace(r"\includecomment{fullonly}", r"\excludecomment{fullonly}")
+
     cv_tex.write_text(content, encoding="utf-8")
+
+
+def _looks_like_placeholder(tex: str) -> bool:
+    markers = [
+        "Your Most Recent Job Title",
+        "Ph.D. in YOUR FIELD",
+        "YOUR FIELD",
+        "Project Name",
+        "YOUR_GITHUB/PROJECT",
+        "Your domain-specific technical skills here",
+    ]
+    return any(m in (tex or "") for m in markers)
+
+
+def _generate_base_rubric(*, rubric_name: str, life_story: str, model: str) -> str:
+    system = (
+        "You generate LaTeX rubric content for the curve CV template.\n"
+        "Return LaTeX only (no markdown, no explanations).\n"
+        "Must compile inside a file like employment.tex/education.tex/skills.tex/projects.tex.\n"
+        "Use this exact structure:\n"
+        "\\begin{rubric}{<Title>} ... \\end{rubric}\n"
+        "Use \\entry*[DATE] ... for items.\n"
+        "Do NOT invent degrees, companies, dates, or achievements. Only use what is explicitly in LIFE STORY.\n"
+        "Escape LaTeX special characters when needed (e.g., %, &, _).\n"
+    )
+
+    prompt = (
+        f"LIFE STORY:\n{life_story}\n\n"
+        f"Task: Generate the '{rubric_name}' rubric file content.\n"
+        "If the life story does not contain enough info for a section, keep it minimal but valid.\n"
+    )
+    return generate_latex(prompt=prompt, system=system, model=model, temperature=0.2, max_tokens=1800, timeout=600)
+
+
+def ensure_base_cv_content(cv_dir: Path, *, model: str = "qwen2.5:3b") -> None:
+    """If cv_dir contains template placeholders, regenerate from life-story.md."""
+    life_story_path = resolve_life_story_path(cv_dir)
+    if not life_story_path.exists():
+        return
+    life_story = life_story_path.read_text(encoding="utf-8", errors="replace")
+
+    targets = {
+        "employment.tex": ("Experience", "employment"),
+        "education.tex": ("Education", "education"),
+        "skills.tex": ("Skills", "skills"),
+        "projects.tex": ("Projects", "projects"),
+    }
+
+    for filename, (_title, rubric_key) in targets.items():
+        path = cv_dir / filename
+        if not path.exists():
+            continue
+        current = path.read_text(encoding="utf-8", errors="replace")
+        if not _looks_like_placeholder(current):
+            continue
+
+        try:
+            generated = _generate_base_rubric(rubric_name=rubric_key, life_story=life_story, model=model)
+            if generated and "\\begin{rubric}" in generated and "\\end{rubric}" in generated:
+                path.write_text(generated.strip() + "\n", encoding="utf-8")
+                logger.info("Regenerated base %s from life-story.md", filename)
+        except Exception as e:
+            logger.warning("Failed to regenerate base %s: %s", filename, e)
 
 def ensure_cv_scaffold(cv_dir: Path) -> None:
     """Ensure cv_dir contains the minimum required template files.
@@ -583,6 +652,8 @@ def customize_cv_for_job(
 
     cv_dir = resolve_cv_dir(profile)
     ensure_cv_scaffold(cv_dir)
+    # Ensure base files are real (not placeholders) before tailoring per-job.
+    ensure_base_cv_content(cv_dir, model=model)
     life_story_path = resolve_life_story_path(cv_dir)
 
     # Load master content
