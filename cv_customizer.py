@@ -30,6 +30,41 @@ SYMLINK_FILES = [
     "own-bib.bib", "photo.png", "photo.jpg", "settings.sty",
 ]
 
+def ensure_cv_scaffold(cv_dir: Path) -> None:
+    """Ensure cv_dir contains the minimum required template files.
+
+    The repo ships templates in ./cv_templates, but the working cv/ folder is user-owned
+    (often gitignored). If cv/ is missing, copy the templates once.
+    """
+    templates_dir = _PROJECT_ROOT / "cv_templates"
+    if not templates_dir.exists():
+        return
+
+    cv_dir.mkdir(parents=True, exist_ok=True)
+
+    mapping = {
+        "cv-llt-template.tex": "cv-llt.tex",
+        "employment-template.tex": "employment.tex",
+        "skills-template.tex": "skills.tex",
+        "projects-template.tex": "projects.tex",
+        "education-template.tex": "education.tex",
+        "settings.sty": "settings.sty",
+    }
+
+    for src_name, dest_name in mapping.items():
+        src = templates_dir / src_name
+        dest = cv_dir / dest_name
+        if src.exists() and not dest.exists():
+            shutil.copy2(str(src), str(dest))
+
+    # Life story template (only if user doesn't already have one in project root)
+    project_life = _PROJECT_ROOT / "life-story.md"
+    if not project_life.exists():
+        src = templates_dir / "life_story_template.md"
+        dest = cv_dir / "life-story.md"
+        if src.exists() and not dest.exists():
+            shutil.copy2(str(src), str(dest))
+
 
 def resolve_cv_dir(profile: Optional[dict] = None) -> Path:
     """Return the CV directory from profile config, falling back to ./cv."""
@@ -383,6 +418,7 @@ def customize_cv_for_job(
         return None
 
     cv_dir = resolve_cv_dir(profile)
+    ensure_cv_scaffold(cv_dir)
     life_story_path = resolve_life_story_path(cv_dir)
 
     # Load master content
