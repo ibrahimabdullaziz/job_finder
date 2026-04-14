@@ -458,8 +458,9 @@ def compile_latex(directory: Path) -> Optional[str]:
     pdflatex_cmd = str(pdflatex) if pdflatex.exists() else "pdflatex"
     try:
         # Run twice for references.
+        last = None
         for _ in range(2):
-            subprocess.run(
+            last = subprocess.run(
                 [pdflatex_cmd, "-interaction=nonstopmode", "cv-llt.tex"],
                 cwd=str(directory),
                 capture_output=True,
@@ -475,6 +476,15 @@ def compile_latex(directory: Path) -> Optional[str]:
                 pdf_path.unlink()
             except Exception:
                 pass
+        if last is not None:
+            try:
+                (directory / "cv-compile.stdout.txt").write_text(last.stdout or "", encoding="utf-8", errors="replace")
+                (directory / "cv-compile.stderr.txt").write_text(last.stderr or "", encoding="utf-8", errors="replace")
+            except Exception:
+                pass
+            tail = ((last.stderr or last.stdout or "")[-2500:]).strip()
+            if tail:
+                logger.error("pdflatex output (tail):\n%s", tail)
         logger.error("PDF not generated via pdflatex either.")
         return None
     except Exception as e:
