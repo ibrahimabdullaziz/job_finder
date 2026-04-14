@@ -365,7 +365,13 @@ def create_application_dir(slug: str, cv_dir: Path) -> Path:
             try:
                 link.symlink_to(target)
             except OSError as e:
-                logger.warning("Failed to create symlink %s: %s", f, e)
+                # Windows often blocks symlinks without admin/developer-mode.
+                # Fall back to copying to keep the build working.
+                logger.warning("Failed to create symlink %s: %s (copying instead)", f, e)
+                try:
+                    shutil.copy2(str(target), str(link))
+                except Exception as copy_err:
+                    logger.warning("Failed to copy %s: %s", f, copy_err)
 
     return dest
 
@@ -377,32 +383,58 @@ def compile_latex(directory: Path) -> Optional[str]:
         logger.error("No cv-llt.tex found in %s", directory)
         return None
 
+    def _cleanup():
+        for ext in [".aux", ".bbl", ".bcf", ".blg", ".fdb_latexmk", ".fls",
+                    ".log", ".out", ".run.xml", ".synctex.gz", ".toc"]:
+            aux = directory / ("cv-llt" + ext)
+            if aux.exists():
+                try:
+                    aux.unlink()
+                except Exception:
+                    pass
+
+    pdf_path = directory / "cv-llt.pdf"
+
+    # Prefer latexmk if available (fast, handles refs), but on Windows MiKTeX it may require Perl.
     try:
         result = subprocess.run(
             ["latexmk", "-pdf", "-interaction=nonstopmode", "cv-llt.tex"],
             cwd=str(directory),
             capture_output=True,
             text=True,
-            timeout=120,
+            timeout=180,
         )
-
-        pdf_path = directory / "cv-llt.pdf"
         if pdf_path.exists():
-            # Clean up auxiliary files
-            for ext in [".aux", ".bbl", ".bcf", ".blg", ".fdb_latexmk", ".fls",
-                        ".log", ".out", ".run.xml", ".synctex.gz", ".toc"]:
-                aux = directory / ("cv-llt" + ext)
-                if aux.exists():
-                    aux.unlink()
+            _cleanup()
             return str(pdf_path)
-        else:
-            logger.error("PDF not generated. LaTeX output:\n%s", result.stderr[-2000:])
-            return None
-    except subprocess.TimeoutExpired:
-        logger.error("LaTeX compilation timed out")
+        stderr = (result.stderr or "")[-2000:]
+        if "script engine 'perl'" not in stderr.lower():
+            logger.error("PDF not generated. LaTeX output:\n%s", stderr)
+    except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+        logger.warning("latexmk unavailable/failed (%s). Falling back to pdflatex.", e)
+
+    # Fallback: run pdflatex directly (no Perl).
+    # Try MiKTeX common path first; else rely on PATH.
+    miktex_bin = Path(r"C:\Users\Admin\AppData\Local\Programs\MiKTeX\miktex\bin\x64")
+    pdflatex = miktex_bin / "pdflatex.exe"
+    pdflatex_cmd = str(pdflatex) if pdflatex.exists() else "pdflatex"
+    try:
+        # Run twice for references.
+        for _ in range(2):
+            subprocess.run(
+                [pdflatex_cmd, "-interaction=nonstopmode", "cv-llt.tex"],
+                cwd=str(directory),
+                capture_output=True,
+                text=True,
+                timeout=180,
+            )
+        if pdf_path.exists():
+            _cleanup()
+            return str(pdf_path)
+        logger.error("PDF not generated via pdflatex either.")
         return None
-    except FileNotFoundError:
-        logger.error("latexmk not found. Install LaTeX (e.g., brew install --cask mactex)")
+    except Exception as e:
+        logger.error("pdflatex failed: %s", e)
         return None
 
 
