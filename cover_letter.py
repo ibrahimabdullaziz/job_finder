@@ -11,6 +11,7 @@ from typing import Dict, Optional
 
 from llm import generate_latex, check_ollama_available
 from cv_customizer import ensure_miktex_auto_install
+from cv_customizer import _is_valid_pdf
 
 logger = logging.getLogger(__name__)
 
@@ -280,7 +281,7 @@ def create_cover_letter(
             text=True,
             timeout=180,
         )
-        if pdf_path.exists():
+        if _is_valid_pdf(pdf_path):
             _cleanup()
             logger.info("Cover letter generated: %s", pdf_path)
             return str(pdf_path)
@@ -306,12 +307,22 @@ def create_cover_letter(
                 text=True,
                 timeout=600,
             )
-        if pdf_path.exists():
+        if _is_valid_pdf(pdf_path):
             _cleanup()
             logger.info("Cover letter generated (pdflatex): %s", pdf_path)
             return str(pdf_path)
+        if pdf_path.exists() and not _is_valid_pdf(pdf_path):
+            try:
+                pdf_path.unlink()
+            except Exception:
+                pass
         logger.error("Cover letter PDF not generated via pdflatex either.")
         return None
     except Exception as e:
         logger.error("pdflatex failed: %s", e)
+        if pdf_path.exists() and not _is_valid_pdf(pdf_path):
+            try:
+                pdf_path.unlink()
+            except Exception:
+                pass
         return None

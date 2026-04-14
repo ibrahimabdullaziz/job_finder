@@ -60,6 +60,18 @@ def ensure_miktex_auto_install() -> None:
     except Exception:
         pass
 
+def _is_valid_pdf(path: Path) -> bool:
+    """Cheap PDF integrity check: header + EOF marker + minimum size."""
+    try:
+        if not path.exists() or path.stat().st_size < 10_000:
+            return False
+        data = path.read_bytes()
+        if not data.startswith(b"%PDF"):
+            return False
+        return b"%%EOF" in data[-2048:]
+    except Exception:
+        return False
+
 def ensure_cv_scaffold(cv_dir: Path) -> None:
     """Ensure cv_dir contains the minimum required template files.
 
@@ -430,7 +442,7 @@ def compile_latex(directory: Path) -> Optional[str]:
             text=True,
             timeout=180,
         )
-        if pdf_path.exists():
+        if _is_valid_pdf(pdf_path):
             _cleanup()
             return str(pdf_path)
         stderr = (result.stderr or "")[-2000:]
@@ -452,15 +464,26 @@ def compile_latex(directory: Path) -> Optional[str]:
                 cwd=str(directory),
                 capture_output=True,
                 text=True,
-                timeout=600,
+                timeout=900,
             )
-        if pdf_path.exists():
+        if _is_valid_pdf(pdf_path):
             _cleanup()
             return str(pdf_path)
+        # Remove corrupt/partial PDF if it exists
+        if pdf_path.exists() and not _is_valid_pdf(pdf_path):
+            try:
+                pdf_path.unlink()
+            except Exception:
+                pass
         logger.error("PDF not generated via pdflatex either.")
         return None
     except Exception as e:
         logger.error("pdflatex failed: %s", e)
+        if pdf_path.exists() and not _is_valid_pdf(pdf_path):
+            try:
+                pdf_path.unlink()
+            except Exception:
+                pass
         return None
 
 

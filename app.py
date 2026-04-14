@@ -436,6 +436,7 @@ def create_app():
         and DO NOT email the recruiter.
         """
         from datetime import datetime as _dt
+        # Import lazily so review-email flow works even if email-sender module changes.
         from applier import send_application_email, prepare_application_package
         from notifier import send_review_email
 
@@ -460,7 +461,8 @@ def create_app():
 
         app_row = dict(row)
         to_email = recruiter_email or (app_row.get("recruiter_email") or "").strip()
-        if not to_email:
+        # For dry_run (review email), recruiter email is optional.
+        if not dry_run and not to_email:
             return jsonify({"status": "error", "error": "Recruiter email required"}), 400
 
         # Prepare attachments from application directory
@@ -487,7 +489,7 @@ def create_app():
             # Store recruiter email and mark review sent (but NOT approved/sent)
             update_application(
                 int(app_id),
-                recruiter_email=to_email,
+                recruiter_email=to_email or "",
                 status="review_sent",
                 email_subject=subject,
                 email_body=body,
@@ -497,17 +499,21 @@ def create_app():
             profile = load_profile()
             recipient = profile.get("pipeline", {}).get("email_recipient") or ""
             if recipient:
-                send_review_email(
-                    job={
-                        "title": app_row["title"],
-                        "company": app_row["company"],
-                        "url": app_row["job_url"],
-                        "match_score": app_row.get("match_score", 0) or 0,
-                    },
-                    cv_path=Path(package["cv"]),
-                    cl_path=Path(package["cover_letter"]) if package.get("cover_letter") else None,
-                    recipient=recipient,
-                )
+                try:
+                    send_review_email(
+                        job={
+                            "title": app_row["title"],
+                            "company": app_row["company"],
+                            "url": app_row["job_url"],
+                            "match_score": app_row.get("match_score", 0) or 0,
+                        },
+                        cv_path=Path(package["cv"]),
+                        cl_path=Path(package["cover_letter"]) if package.get("cover_letter") else None,
+                        recipient=recipient,
+                    )
+                except Exception as e:
+                    # Always return JSON so the UI doesn't choke on HTML error pages.
+                    return jsonify({"status": "error", "error": f"Failed to send review email: {e}"}), 500
             return jsonify({"status": "ok", "sent": False, "dry_run": True, "review_emailed": bool(recipient)})
 
         # Mark approved (and store recruiter email)
