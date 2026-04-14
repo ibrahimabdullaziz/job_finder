@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Dict, Optional
 
 from llm import generate_latex, generate_structured, check_ollama_available
+from user_profile import load_person, split_name
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +72,58 @@ def _is_valid_pdf(path: Path) -> bool:
         return b"%%EOF" in data[-2048:]
     except Exception:
         return False
+
+
+def _latex_escape(text: str) -> str:
+    if text is None:
+        return ""
+    return (
+        str(text)
+        .replace("\\", r"\textbackslash{}")
+        .replace("&", r"\&")
+        .replace("%", r"\%")
+        .replace("$", r"\$")
+        .replace("#", r"\#")
+        .replace("_", r"\_")
+        .replace("{", r"\{")
+        .replace("}", r"\}")
+        .replace("~", r"\textasciitilde{}")
+        .replace("^", r"\textasciicircum{}")
+    )
+
+
+def personalize_cv_header(app_dir: Path) -> None:
+    """Replace YOUR_* placeholders in app_dir/cv-llt.tex using life-story/profile."""
+    cv_tex = app_dir / "cv-llt.tex"
+    if not cv_tex.exists():
+        return
+
+    person = load_person()
+    first, last = split_name(person.full_name or "")
+
+    linkedin_handle = (person.linkedin or "").strip()
+    if linkedin_handle.startswith("http"):
+        linkedin_handle = linkedin_handle.rstrip("/").split("/")[-1]
+
+    github_handle = (person.github or "").strip()
+    if github_handle.startswith("http"):
+        github_handle = github_handle.rstrip("/").split("/")[-1]
+
+    replacements = {
+        "YOUR_FIRST_NAME": _latex_escape(first or person.full_name),
+        "YOUR_LAST_NAME": _latex_escape(last),
+        "YOUR_EMAIL": _latex_escape(person.email),
+        "YOUR_LINKEDIN_HANDLE": _latex_escape(linkedin_handle),
+        "YOUR_GITHUB": _latex_escape(github_handle),
+        "YOUR_LASTNAME": _latex_escape(last),
+        "YOUR_FIRSTNAME": _latex_escape(first),
+        "YOUR_MIDDLENAME_OR_INITIAL": "",
+    }
+
+    content = cv_tex.read_text(encoding="utf-8", errors="replace")
+    for k, v in replacements.items():
+        content = content.replace(k, v)
+    cv_tex.write_text(content, encoding="utf-8")
 
 def ensure_cv_scaffold(cv_dir: Path) -> None:
     """Ensure cv_dir contains the minimum required template files.
@@ -580,6 +633,7 @@ def customize_cv_for_job(
     (app_dir / "employment.tex").write_text(employment_tex, encoding="utf-8")
     (app_dir / "skills.tex").write_text(skills_tex, encoding="utf-8")
     (app_dir / "projects.tex").write_text(projects_tex, encoding="utf-8")
+    personalize_cv_header(app_dir)
 
     # Write job description for reference
     jd_content = f"# {title} at {company}\n\n**Location:** {location}\n**URL:** {job_url}\n\n---\n\n{description}"
