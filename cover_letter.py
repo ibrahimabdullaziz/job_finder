@@ -254,31 +254,61 @@ def create_cover_letter(
     app_path = Path(app_dir)
     tex_file = app_path / "cover-letter.tex"
     tex_file.write_text(tex_content, encoding="utf-8")
+    # Save preview used as email body elsewhere
+    (app_path / "cover-letter.md").write_text(body, encoding="utf-8")
 
+    def _cleanup():
+        for ext in [".aux", ".fdb_latexmk", ".fls", ".log", ".out", ".synctex.gz", ".toc"]:
+            aux = app_path / ("cover-letter" + ext)
+            if aux.exists():
+                try:
+                    aux.unlink()
+                except Exception:
+                    pass
+
+    pdf_path = app_path / "cover-letter.pdf"
+
+    # Prefer latexmk, but MiKTeX latexmk may require Perl on Windows.
     try:
         result = subprocess.run(
             ["latexmk", "-pdf", "-interaction=nonstopmode", "cover-letter.tex"],
             cwd=str(app_path),
             capture_output=True,
             text=True,
-            timeout=120,
+            timeout=180,
         )
-
-        pdf_path = app_path / "cover-letter.pdf"
         if pdf_path.exists():
-            # Clean aux files
-            for ext in [".aux", ".fdb_latexmk", ".fls", ".log", ".out", ".synctex.gz"]:
-                aux = app_path / ("cover-letter" + ext)
-                if aux.exists():
-                    aux.unlink()
+            _cleanup()
             logger.info("Cover letter generated: %s", pdf_path)
             return str(pdf_path)
-        else:
-            logger.error("Cover letter PDF not generated. Errors:\n%s", result.stderr[-1000:])
-            return None
+
+        err = (result.stderr or "")[-1000:]
+        if "script engine 'perl'" not in err.lower():
+            logger.error("Cover letter PDF not generated. Errors:\n%s", err)
     except subprocess.TimeoutExpired:
-        logger.error("Cover letter compilation timed out")
-        return None
+        logger.warning("Cover letter compilation timed out (latexmk). Falling back to pdflatex.")
     except FileNotFoundError:
-        logger.error("latexmk not found")
+        logger.warning("latexmk not found. Falling back to pdflatex.")
+
+    # Fallback: pdflatex (no perl)
+    miktex_bin = Path(r"C:\Users\Admin\AppData\Local\Programs\MiKTeX\miktex\bin\x64")
+    pdflatex = miktex_bin / "pdflatex.exe"
+    pdflatex_cmd = str(pdflatex) if pdflatex.exists() else "pdflatex"
+    try:
+        for _ in range(2):
+            subprocess.run(
+                [pdflatex_cmd, "-interaction=nonstopmode", "cover-letter.tex"],
+                cwd=str(app_path),
+                capture_output=True,
+                text=True,
+                timeout=240,
+            )
+        if pdf_path.exists():
+            _cleanup()
+            logger.info("Cover letter generated (pdflatex): %s", pdf_path)
+            return str(pdf_path)
+        logger.error("Cover letter PDF not generated via pdflatex either.")
+        return None
+    except Exception as e:
+        logger.error("pdflatex failed: %s", e)
         return None
