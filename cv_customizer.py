@@ -33,6 +33,8 @@ SYMLINK_FILES = [
 # Optional few-shot examples for specific domains. Not required for web/dev CVs.
 # Keep empty unless you add example files and mappings.
 EXAMPLE_EMPLOYMENT: Dict[str, Path] = {}
+EXAMPLE_SKILLS: Dict[str, Path] = {}
+EXAMPLE_PROJECTS: Dict[str, Path] = {}
 
 def ensure_cv_scaffold(cv_dir: Path) -> None:
     """Ensure cv_dir contains the minimum required template files.
