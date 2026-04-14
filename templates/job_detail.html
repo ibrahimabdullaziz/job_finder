@@ -71,7 +71,7 @@
                     <input type="email" id="recruiter-email" placeholder="recruiter@company.com"
                            value="{{ application.recruiter_email or '' }}">
                     <div class="btn-group" style="margin-top:0.5rem">
-                        <button class="outline" onclick="approveSendFromJob({{ application.id }}, true)">Dry Run</button>
+                        <button class="outline" onclick="approveSendFromJob({{ application.id }}, true)">Email me for review</button>
                         <button style="background:#16a34a;border-color:#16a34a;color:#fff"
                                 onclick="approveSendFromJob({{ application.id }}, false)"
                                 {% if application.status not in ['ready','approved'] %}disabled{% endif %}>
@@ -149,7 +149,7 @@ async function approveSendFromJob(appId, dryRun) {
         });
         const data = await resp.json();
         if (data.status === 'ok') {
-            alert(dryRun ? 'Dry run OK (not sent).' : 'Sent!');
+            alert(dryRun ? 'Review email sent to you (not sent to company).' : 'Sent to company!');
             window.location.reload();
         } else {
             alert('Error: ' + (data.error || 'Unknown error'));

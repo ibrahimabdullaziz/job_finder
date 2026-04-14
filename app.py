@@ -430,9 +430,14 @@ def create_app():
 
     @app.route("/api/application/approve-send", methods=["POST"])
     def api_approve_and_send():
-        """Approve an application and immediately send the email."""
+        """Approve an application and send the email.
+
+        If `dry_run` is true, we send a *review email to the user* (with attachments)
+        and DO NOT email the recruiter.
+        """
         from datetime import datetime as _dt
         from applier import send_application_email, prepare_application_package
+        from notifier import send_review_email
 
         data = request.json or {}
         app_id = data.get("app_id")
@@ -478,6 +483,33 @@ def create_app():
                 f"{app_row['company']}.\n\nBest regards,\nIbrahim Abdullaziz"
             )
 
+        if dry_run:
+            # Store recruiter email and mark review sent (but NOT approved/sent)
+            update_application(
+                int(app_id),
+                recruiter_email=to_email,
+                status="review_sent",
+                email_subject=subject,
+                email_body=body,
+            )
+
+            # Send a review email to YOU with attachments.
+            profile = load_profile()
+            recipient = profile.get("pipeline", {}).get("email_recipient") or ""
+            if recipient:
+                send_review_email(
+                    job={
+                        "title": app_row["title"],
+                        "company": app_row["company"],
+                        "url": app_row["job_url"],
+                        "match_score": app_row.get("match_score", 0) or 0,
+                    },
+                    cv_path=Path(package["cv"]),
+                    cl_path=Path(package["cover_letter"]) if package.get("cover_letter") else None,
+                    recipient=recipient,
+                )
+            return jsonify({"status": "ok", "sent": False, "dry_run": True, "review_emailed": bool(recipient)})
+
         # Mark approved (and store recruiter email)
         update_application(
             int(app_id),
@@ -487,9 +519,6 @@ def create_app():
             email_subject=subject,
             email_body=body,
         )
-
-        if dry_run:
-            return jsonify({"status": "ok", "sent": False, "dry_run": True})
 
         ok = send_application_email(
             to_email=to_email,

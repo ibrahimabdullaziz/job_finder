@@ -52,7 +52,7 @@
             </td>
             <td style="min-width:180px">
                 <div class="btn-group">
-                    <button class="btn-sm outline" onclick="approveSend({{ app.id }}, true)">Dry Run</button>
+                    <button class="btn-sm outline" onclick="approveSend({{ app.id }}, true)">Email me for review</button>
                     <button class="btn-sm" style="background:#16a34a;border-color:#16a34a;color:#fff"
                             onclick="approveSend({{ app.id }}, false)"
                             {% if app.status not in ['ready','approved'] %}disabled{% endif %}>
@@ -102,7 +102,7 @@ async function approveSend(appId, dryRun) {
         });
         const data = await resp.json();
         if (data.status === 'ok') {
-            alert(dryRun ? 'Dry run OK (not sent).' : 'Sent!');
+            alert(dryRun ? 'Review email sent to you (not sent to company).' : 'Sent to company!');
             window.location.reload();
         } else {
             alert('Error: ' + (data.error || 'Unknown error'));
