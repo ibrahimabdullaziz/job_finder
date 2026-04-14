@@ -164,6 +164,251 @@ def _generate_base_rubric(*, rubric_name: str, life_story: str, model: str) -> s
     return generate_latex(prompt=prompt, system=system, model=model, temperature=0.2, max_tokens=1800, timeout=600)
 
 
+def _extract_section(text: str, header: str) -> str:
+    # Extract markdown section content between "## Header" and next "## ".
+    pattern = rf"^##\s+{re.escape(header)}\s*$"
+    lines = text.splitlines()
+    start = None
+    for i, ln in enumerate(lines):
+        if re.match(pattern, ln.strip(), flags=re.IGNORECASE):
+            start = i + 1
+            break
+    if start is None:
+        return ""
+    out: list[str] = []
+    for ln in lines[start:]:
+        if ln.strip().startswith("## "):
+            break
+        out.append(ln)
+    return "\n".join(out).strip()
+
+
+def _md_bullets(block: str) -> list[str]:
+    bullets: list[str] = []
+    for ln in (block or "").splitlines():
+        s = ln.strip()
+        if s.startswith("- "):
+            bullets.append(s[2:].strip())
+    return bullets
+
+
+def _parse_work_experience(text: str) -> list[dict]:
+    # Expect entries like:
+    # ### Role — Org, Location
+    # **July 2025 – August 2025**
+    # paragraph(s)
+    # - bullets...
+    # **Technologies:** ...
+    block = _extract_section(text, "Work Experience")
+    if not block:
+        return []
+    lines = block.splitlines()
+    entries: list[dict] = []
+    i = 0
+    while i < len(lines):
+        ln = lines[i].strip()
+        if ln.startswith("### "):
+            title = ln[4:].strip()
+            i += 1
+            date = ""
+            if i < len(lines) and lines[i].strip().startswith("**") and lines[i].strip().endswith("**"):
+                date = lines[i].strip().strip("*").strip()
+                i += 1
+            body_lines: list[str] = []
+            while i < len(lines) and not lines[i].strip().startswith("### "):
+                body_lines.append(lines[i])
+                i += 1
+            body = "\n".join(body_lines).strip()
+            tech = ""
+            m = re.search(r"\*\*Technologies:\*\*\s*(.+)", body)
+            if m:
+                tech = m.group(1).strip()
+            bullets = _md_bullets(body)
+            # Remove the technologies line from bullets if present
+            bullets = [b for b in bullets if not b.lower().startswith("technologies:")]
+            # First non-empty paragraph sentence as context (optional)
+            paras = [p.strip() for p in re.split(r"\n\s*\n", body) if p.strip()]
+            context = ""
+            if paras:
+                context = re.sub(r"\*\*Technologies:\*\*.*", "", paras[0]).strip()
+            entries.append({"title": title, "date": date, "context": context, "bullets": bullets, "tech": tech})
+        else:
+            i += 1
+    return entries
+
+
+def _parse_education(text: str) -> list[dict]:
+    block = _extract_section(text, "Education")
+    if not block:
+        return []
+    lines = block.splitlines()
+    entries: list[dict] = []
+    i = 0
+    while i < len(lines):
+        ln = lines[i].strip()
+        if ln.startswith("### "):
+            title = ln[4:].strip()
+            i += 1
+            date = ""
+            if i < len(lines) and lines[i].strip().startswith("**") and lines[i].strip().endswith("**"):
+                date = lines[i].strip().strip("*").strip()
+                i += 1
+            body_lines: list[str] = []
+            while i < len(lines) and not lines[i].strip().startswith("### "):
+                body_lines.append(lines[i])
+                i += 1
+            body = "\n".join(body_lines).strip()
+            bullets = _md_bullets(body)
+            entries.append({"title": title, "date": date, "bullets": bullets})
+        else:
+            i += 1
+    return entries
+
+
+def _parse_projects(text: str) -> list[dict]:
+    block = _extract_section(text, "Projects")
+    if not block:
+        return []
+    lines = block.splitlines()
+    entries: list[dict] = []
+    i = 0
+    while i < len(lines):
+        ln = lines[i].strip()
+        if ln.startswith("### "):
+            name = ln[4:].strip()
+            i += 1
+            body_lines: list[str] = []
+            while i < len(lines) and not lines[i].strip().startswith("### "):
+                body_lines.append(lines[i])
+                i += 1
+            body = "\n".join(body_lines).strip()
+            bullets = _md_bullets(body)
+            code = ""
+            tech = ""
+            what = ""
+            for b in bullets:
+                if b.lower().startswith("code:"):
+                    code = b.split(":", 1)[1].strip()
+                elif b.lower().startswith("technologies:"):
+                    tech = b.split(":", 1)[1].strip()
+                elif b.lower().startswith("what it does:"):
+                    what = b.split(":", 1)[1].strip()
+            # Key achievements line (optional)
+            achievements = ""
+            for b in bullets:
+                if b.lower().startswith("key achievements:"):
+                    achievements = b.split(":", 1)[1].strip()
+            entries.append({"name": name, "what": what, "achievements": achievements, "tech": tech, "code": code})
+        else:
+            i += 1
+    return entries
+
+
+def _parse_skills(text: str) -> list[tuple[str, str]]:
+    block = _extract_section(text, "Skills")
+    if not block:
+        return []
+    lines = block.splitlines()
+    out: list[tuple[str, str]] = []
+    current = ""
+    items: list[str] = []
+    for ln in lines:
+        s = ln.strip()
+        if s.startswith("### "):
+            if current and items:
+                out.append((current, ", ".join(items)))
+            current = s[4:].strip()
+            items = []
+        elif s.startswith("- "):
+            # skill line sometimes has "X — note"
+            items.append(s[2:].split("—", 1)[0].strip())
+    if current and items:
+        out.append((current, ", ".join(items)))
+    return out
+
+
+def _entry(date: str, body_lines: list[str]) -> str:
+    # Curve rubric entry format expected by template:
+    # \entry*[DATE]%
+    #     line
+    #     \par line
+    date = (date or "").replace("–", "--")
+    out = [rf"\entry*[{_latex_escape(date)}]%"]
+    for idx, ln in enumerate(body_lines):
+        if idx == 0:
+            out.append(f"    {ln}")
+        else:
+            out.append(f"    \\par {ln}")
+    return "\n".join(out)
+
+
+def render_employment_from_life_story(text: str) -> str:
+    entries = _parse_work_experience(text)
+    lines = [r"\begin{rubric}{Experience}", ""]
+    if not entries:
+        lines += [r"\end{rubric}", ""]
+        return "\n".join(lines).strip()
+    for e in entries:
+        title = e["title"]
+        # Split "Role — Org, ..." if present
+        role = title
+        org = ""
+        if "—" in title:
+            role, org = [p.strip() for p in title.split("—", 1)]
+        head = rf"\textbf{{{_latex_escape(role)},}} {_latex_escape(org)}.".strip()
+        body: list[str] = [head]
+        if e.get("context"):
+            body.append(_latex_escape(e["context"]))
+        for b in e.get("bullets", [])[:6]:
+            body.append(rf"- {_latex_escape(b)}")
+        if e.get("tech"):
+            body.append(rf"Technologies: {_latex_escape(e['tech'])}.")
+        lines.append(_entry(e.get("date", ""), body))
+        lines.append("")
+    lines.append(r"\end{rubric}")
+    return "\n".join(lines).strip() + "\n"
+
+
+def render_education_from_life_story(text: str) -> str:
+    entries = _parse_education(text)
+    lines = [r"\begin{rubric}{Education}", ""]
+    for e in entries:
+        title = _latex_escape(e["title"])
+        body = [rf"\textbf{{{title}}}"]
+        for b in e.get("bullets", [])[:6]:
+            body.append(rf"- {_latex_escape(b)}")
+        lines.append(_entry(e.get("date", ""), body))
+        lines.append("")
+    lines.append(r"\end{rubric}")
+    return "\n".join(lines).strip() + "\n"
+
+
+def render_skills_from_life_story(text: str) -> str:
+    cats = _parse_skills(text)
+    lines = [r"\begin{rubric}{Skills}", ""]
+    for cat, items in cats:
+        lines.append(rf"\entry*[{_latex_escape(cat)}]%")
+        lines.append(f"    {_latex_escape(items)}.")
+        lines.append("")
+    lines.append(r"\end{rubric}")
+    return "\n".join(lines).strip() + "\n"
+
+
+def render_projects_from_life_story(text: str) -> str:
+    projs = _parse_projects(text)
+    lines = [r"\begin{rubric}{Projects}", ""]
+    for p in projs:
+        body: list[str] = [rf"\textbf{{{_latex_escape(p['name'])}}} — {_latex_escape(p.get('what') or p.get('achievements') or '')}"]
+        if p.get("tech"):
+            body.append(rf"Technologies: {_latex_escape(p['tech'])}.")
+        if p.get("code"):
+            body.append(rf"\href{{{p['code']}}}{{\faGithub}}")
+        lines.append(_entry("2025", body))
+        lines.append("")
+    lines.append(r"\end{rubric}")
+    return "\n".join(lines).strip() + "\n"
+
+
 def ensure_base_cv_content(cv_dir: Path, *, model: str = "qwen2.5:3b") -> None:
     """If cv_dir contains template placeholders, regenerate from life-story.md."""
     life_story_path = resolve_life_story_path(cv_dir)
@@ -171,26 +416,23 @@ def ensure_base_cv_content(cv_dir: Path, *, model: str = "qwen2.5:3b") -> None:
         return
     life_story = life_story_path.read_text(encoding="utf-8", errors="replace")
 
-    targets = {
-        "employment.tex": ("Experience", "employment"),
-        "education.tex": ("Education", "education"),
-        "skills.tex": ("Skills", "skills"),
-        "projects.tex": ("Projects", "projects"),
+    renderers = {
+        "employment.tex": render_employment_from_life_story,
+        "education.tex": render_education_from_life_story,
+        "skills.tex": render_skills_from_life_story,
+        "projects.tex": render_projects_from_life_story,
     }
 
-    for filename, (_title, rubric_key) in targets.items():
+    for filename, renderer in renderers.items():
         path = cv_dir / filename
         if not path.exists():
             continue
         current = path.read_text(encoding="utf-8", errors="replace")
         if not _looks_like_placeholder(current):
             continue
-
         try:
-            generated = _generate_base_rubric(rubric_name=rubric_key, life_story=life_story, model=model)
-            if generated and "\\begin{rubric}" in generated and "\\end{rubric}" in generated:
-                path.write_text(generated.strip() + "\n", encoding="utf-8")
-                logger.info("Regenerated base %s from life-story.md", filename)
+            path.write_text(renderer(life_story), encoding="utf-8")
+            logger.info("Regenerated base %s from life-story.md", filename)
         except Exception as e:
             logger.warning("Failed to regenerate base %s: %s", filename, e)
 
