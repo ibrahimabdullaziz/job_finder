@@ -146,7 +146,7 @@ def _looks_like_placeholder(tex: str) -> bool:
         return True
     # Also treat known-bad curve entry formatting as "needs regen"
     # (LLM sometimes emits \entry*[DATE]{...} which breaks curve template expectations).
-    if re.search(r"\\entry\\*\\[[^\\]]*\\]\\s*\\{", t):
+    if re.search(r"\\entry\*\[[^\]]*\]\s*\{", t):
         return True
     return False
 
