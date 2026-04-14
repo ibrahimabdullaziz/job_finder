@@ -36,6 +36,30 @@ EXAMPLE_EMPLOYMENT: Dict[str, Path] = {}
 EXAMPLE_SKILLS: Dict[str, Path] = {}
 EXAMPLE_PROJECTS: Dict[str, Path] = {}
 
+def ensure_miktex_auto_install() -> None:
+    """Best-effort: disable MiKTeX package install popups.
+
+    MiKTeX can prompt with GUI dialogs for missing packages, which will stall
+    automated compilation and cause timeouts. We try to configure MiKTeX to
+    auto-install packages without asking.
+    """
+    try:
+        # `initexmf` is the MiKTeX config tool. If it isn't present, ignore.
+        subprocess.run(
+            ["initexmf", "--set-config-value=[MPM]AutoInstall=1"],
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        subprocess.run(
+            ["initexmf", "--set-config-value=[MPM]AskInstall=0"],
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+    except Exception:
+        pass
+
 def ensure_cv_scaffold(cv_dir: Path) -> None:
     """Ensure cv_dir contains the minimum required template files.
 
@@ -395,6 +419,8 @@ def compile_latex(directory: Path) -> Optional[str]:
 
     pdf_path = directory / "cv-llt.pdf"
 
+    ensure_miktex_auto_install()
+
     # Prefer latexmk if available (fast, handles refs), but on Windows MiKTeX it may require Perl.
     try:
         result = subprocess.run(
@@ -426,7 +452,7 @@ def compile_latex(directory: Path) -> Optional[str]:
                 cwd=str(directory),
                 capture_output=True,
                 text=True,
-                timeout=180,
+                timeout=600,
             )
         if pdf_path.exists():
             _cleanup()

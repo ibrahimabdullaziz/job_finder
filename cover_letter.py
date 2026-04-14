@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Dict, Optional
 
 from llm import generate_latex, check_ollama_available
+from cv_customizer import ensure_miktex_auto_install
 
 logger = logging.getLogger(__name__)
 
@@ -268,6 +269,8 @@ def create_cover_letter(
 
     pdf_path = app_path / "cover-letter.pdf"
 
+    ensure_miktex_auto_install()
+
     # Prefer latexmk, but MiKTeX latexmk may require Perl on Windows.
     try:
         result = subprocess.run(
@@ -301,7 +304,7 @@ def create_cover_letter(
                 cwd=str(app_path),
                 capture_output=True,
                 text=True,
-                timeout=240,
+                timeout=600,
             )
         if pdf_path.exists():
             _cleanup()
