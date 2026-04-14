@@ -30,6 +30,10 @@ SYMLINK_FILES = [
     "own-bib.bib", "photo.png", "photo.jpg", "settings.sty",
 ]
 
+# Optional few-shot examples for specific domains. Not required for web/dev CVs.
+# Keep empty unless you add example files and mappings.
+EXAMPLE_EMPLOYMENT: Dict[str, Path] = {}
+
 def ensure_cv_scaffold(cv_dir: Path) -> None:
     """Ensure cv_dir contains the minimum required template files.
 
@@ -137,16 +141,19 @@ Return JSON with these fields:
 - "focus_areas": list of 3-5 main focus areas of the role
 - "company_mission": one sentence about what the company does (if inferrable)
 """
-    result = generate_structured(prompt, model=model)
-    if not result:
-        result = {
-            "domain": "general_ml",
-            "key_technologies": [],
-            "keywords": [],
-            "focus_areas": [],
-            "company_mission": "",
-        }
-    return result
+    raw = generate_structured(prompt, model=model)
+    # Some models may return a JSON list; normalize to dict.
+    if isinstance(raw, list) and raw:
+        raw = raw[0] if isinstance(raw[0], dict) else {}
+    if not isinstance(raw, dict) or not raw:
+        raw = {}
+    return {
+        "domain": raw.get("domain", "general_ml"),
+        "key_technologies": raw.get("key_technologies", []) or [],
+        "keywords": raw.get("keywords", []) or [],
+        "focus_areas": raw.get("focus_areas", []) or [],
+        "company_mission": raw.get("company_mission", "") or "",
+    }
 
 
 def generate_employment_tex(
